@@ -7,7 +7,9 @@ pub const CAPABILITIES: u32 = phyllo::capabilities::INPUT;
 
 pub const SPAWN_RATE: f32 = 0.01;
 
+static mut difficulty: f32 = 1.0;
 static mut initialized: bool = false;
+static mut dying: u32 = 0;
 static mut idx: usize = 0;
 static mut level: usize = 0;
 static indices: [[usize;20];5] = [
@@ -64,10 +66,10 @@ pub unsafe fn update_obstacles() {
 
 pub unsafe fn spawn_obstacles() {
     let should_spawn = random();
-    if should_spawn < SPAWN_RATE {
+    if should_spawn < SPAWN_RATE * difficulty {
         for _ in 0..3 {
             let spawn_idx = (random() * 20.0) as usize;
-            let obs_time = (30.0 + random() * 60.0) as u64;
+            let obs_time = ((30.0 + random() * 60.0) / difficulty) as u64;
             let obs = Obstacle {
                 frames_remaining: obs_time,
                 frames_per_level: obs_time,
@@ -81,9 +83,16 @@ pub unsafe fn spawn_obstacles() {
 pub fn render(input: &Input<'_>, frame: &mut Frame<'_>) {
     unsafe{
     if !initialized {
+        for i in 0..5 {
+            for j in 0..20 {
+                obstacles[i][j] = Obstacle::new();
+            }
+        }
+        difficulty = 1.0;
         initialized = true;
     }
     let time = input.phase(8_000_000);
+    difficulty += 0.001;
 
     let mut tmp_idx = idx as i32 - input.encoder_delta();
     if tmp_idx < 0 {
@@ -92,7 +101,7 @@ pub fn render(input: &Input<'_>, frame: &mut Frame<'_>) {
     tmp_idx %= 20;
     idx = tmp_idx as usize;
     if input.button_released() {
-        level += 1;
+        // level += 1;
     }
     level %= 5;
 
@@ -101,28 +110,51 @@ pub fn render(input: &Input<'_>, frame: &mut Frame<'_>) {
 
     let test_obstacle = obstacles[level][idx];
     if test_obstacle.frames_remaining != 0 {
+        dying = 60;
+    }
+
+    if dying > 0 {
+        dying -= 1;
         for led in 0..LED_COUNT {
-            frame.set(led, Rgb::new(255,0,0));
+            frame.set(led, Rgb::new(255, 0, 0));
+        }
+        if dying == 0 {
+            initialized = false;
         }
     } else {
-        for led in 0..LED_COUNT {
-            let mod18 = led % 18;
-            if logical_to_physical(level, idx) == led {
-                frame.set(led, Rgb::new(255, 255, 255));
-            } else if [4, 5, 14, 15].contains(&mod18) {
-                frame.set(led, Rgb::new(0, 140, 0));
-            } else if [3, 6, 13, 16].contains(&mod18) {
-                frame.set(led, Rgb::new(0, 0, 140));
-            } else if [2, 7, 12, 17].contains(&mod18) {
-                frame.set(led, Rgb::new(120, 0, 120));
-            } else if [0, 1, 8, 11].contains(&mod18) {
-                frame.set(led, Rgb::new(120, 120, 0));
-            } else if [9, 10].contains(&mod18) {
-                frame.set(led, Rgb::new(0, 120, 120));
-            } else {
-                frame.set(led, Rgb::new(0, 0, 0));
+        for pos in 0..20 {
+            for ring in 0..5 {
+                let led_idx = logical_to_physical(ring, pos);
+                let col_idx = pos % 4;
+                let cols3 = [Rgb::new(0, 140, 0), Rgb::new(0, 0, 140), Rgb::new(120, 0, 120), Rgb::new(120, 120, 0)];
+                let cols = [Rgb::new(0, 180, 0), Rgb::new(0, 0, 180), Rgb::new(140, 0, 140), Rgb::new(140, 140, 0)];
+                let cols2 = [Rgb::new(0, 100, 0), Rgb::new(0, 0, 100), Rgb::new(80, 0, 80), Rgb::new(80, 80, 0)];
+                if led_idx < 90 {
+                    frame.set(led_idx, if ring == 0 {cols[col_idx]} else {cols2[col_idx]});
+                }
             }
         }
+
+        frame.set(logical_to_physical(level, idx), Rgb::new(255, 255, 255));
+
+        // for led in 0..LED_COUNT {
+        //     let mod18 = led % 18;
+        //     if logical_to_physical(level, idx) == led {
+        //         frame.set(led, Rgb::new(255, 255, 255));
+        //     } else if [4, 5, 14, 15].contains(&mod18) {
+        //         frame.set(led, Rgb::new(0, 140, 0));
+        //     } else if [3, 6, 13, 16].contains(&mod18) {
+        //         frame.set(led, Rgb::new(0, 0, 140));
+        //     } else if [2, 7, 12, 17].contains(&mod18) {
+        //         frame.set(led, Rgb::new(120, 0, 120));
+        //     } else if [0, 1, 8, 11].contains(&mod18) {
+        //         frame.set(led, Rgb::new(120, 120, 0));
+        //     } else if [9, 10].contains(&mod18) {
+        //         frame.set(led, Rgb::new(0, 120, 120));
+        //     } else {
+        //         frame.set(led, Rgb::new(0, 0, 0));
+        //     }
+        // }
     }
 
 
