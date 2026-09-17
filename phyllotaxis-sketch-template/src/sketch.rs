@@ -1,12 +1,13 @@
 //! Your sketch lives here. The runtime and raw ABI are in `phyllo.rs`.
 
-use crate::phyllo::{self, Rgb, Frame, Input, LED_COUNT};
+use crate::{frame_ptr, phyllo::{self, Frame, Input, LED_COUNT, Rgb}};
 
 /// Use NONE, AUDIO, INPUT, or AUDIO | INPUT.
 pub const CAPABILITIES: u32 = phyllo::capabilities::INPUT;
 
-static mut idx: i32 = 0;
-static mut level: i32 = 0;
+static mut initialized: bool = false;
+static mut idx: usize = 0;
+static mut level: usize = 0;
 static indices: [[usize;20];5] = [
     [87, 4, 5, 14, 15, 22, 23, 32, 33, 40, 41, 50, 51, 58, 59, 68, 69, 76, 77, 86],
     [88, 3, 6, 13, 16, 21, 24, 31, 34, 39, 42, 49, 52, 57, 60, 67, 70, 75, 78, 85],
@@ -15,15 +16,78 @@ static indices: [[usize;20];5] = [
     [999, 999, 9, 10, 999, 999, 27, 28, 999, 999, 45, 46, 999, 999, 63, 64, 999, 999, 81, 82]
 ];
 
-pub fn logical_to_physical(ring: i32, index: i32) -> usize {
+#[derive(Default, Clone, Copy)]
+struct Obstacle {
+    frames_remaining: u64,
+    color: Rgb,
+    frames_per_level: u64,
+}
+impl Obstacle {
+    fn new() -> Obstacle {
+        Obstacle {
+        color: Rgb {r: 0, g: 0, b: 0},
+        frames_per_level: 0,
+        frames_remaining: 0,
+    }
+    }
+}
+
+static mut obstacles: [[Obstacle;20]; 5] = [[Obstacle {
+    frames_remaining: 0,
+    color: Rgb {r: 0, g: 0, b: 0},
+    frames_per_level: 0,
+}; 20];5];
+
+pub fn logical_to_physical(ring: usize, index: usize) -> usize {
     return indices[ring as usize][index as usize];
+}
+
+pub unsafe fn update_obstacles() {
+    for ring in 0..5 {
+        for position in 0..20 {
+            let obs = &mut obstacles[ring][position];
+            if obs.frames_remaining != 0 {
+                obs.frames_remaining -= 1;
+                if obs.frames_remaining == 0 {
+                    if ring != 0 {
+                        obs.frames_remaining = obs.frames_per_level;
+                        obstacles[ring - 1][position] = *obs;
+                    }
+                    obstacles[ring][position] = Obstacle::new();
+                }
+            }
+        }
+    }
 }
 
 pub fn render(input: &Input<'_>, frame: &mut Frame<'_>) {
     unsafe{
+    if !initialized {
+        obstacles[4][11] = Obstacle {
+            frames_remaining: 60,
+            frames_per_level: 60,
+            color: Rgb::new(255, 255, 255),
+        };
+        obstacles[4][0] = Obstacle {
+            frames_remaining: 60,
+            frames_per_level: 60,
+            color: Rgb::new(0,0,0),
+        };
+        obstacles[4][2] = Obstacle {
+            frames_remaining: 60,
+            frames_per_level: 60,
+            color: Rgb::new(255, 255, 255),
+        };
+        obstacles[4][3] = Obstacle {
+            frames_remaining: 60,
+            frames_per_level: 60,
+            color: Rgb::new(0,0,0),
+        };
+        initialized = true;
+    }
     let time = input.phase(8_000_000);
 
-    idx += input.encoder_delta();
+    idx = (idx as i32 + input.encoder_delta()) as usize;
     if idx < 0 {
         idx = 19;
     }
@@ -33,22 +97,44 @@ pub fn render(input: &Input<'_>, frame: &mut Frame<'_>) {
     }
     level %= 5;
 
-    for led in 0..LED_COUNT {
-        let mod18 = led % 18;
-        if logical_to_physical(level, idx) == led {
-            frame.set(led, Rgb::new(255, 0, 0));
-        } else if [4, 5, 14, 15].contains(&mod18) {
-            frame.set(led, Rgb::new(0, 255, 0));
-        } else if [3, 6, 13, 16].contains(&mod18) {
-            frame.set(led, Rgb::new(0, 0, 255));
-        } else if [2, 7, 12, 17].contains(&mod18) {
-            frame.set(led, Rgb::new(200, 0, 200));
-        } else if [0, 1, 8, 11].contains(&mod18) {
-            frame.set(led, Rgb::new(200, 200, 0));
-        } else if [9, 10].contains(&mod18) {
-            frame.set(led, Rgb::new(0, 200, 200));
-        } else {
-            frame.set(led, Rgb::new(0, 0, 0));
+    update_obstacles();
+
+    let test_obstacle = obstacles[level][idx];
+    if test_obstacle.frames_remaining != 0 {
+        for led in 0..LED_COUNT {
+            frame.set(led, Rgb::new(255,0,0));
+        }
+    } else {
+        for led in 0..LED_COUNT {
+            let mod18 = led % 18;
+            if logical_to_physical(level, idx) == led {
+                frame.set(led, Rgb::new(255, 0, 0));
+            } else if [4, 5, 14, 15].contains(&mod18) {
+                frame.set(led, Rgb::new(0, 255, 0));
+            } else if [3, 6, 13, 16].contains(&mod18) {
+                frame.set(led, Rgb::new(0, 0, 255));
+            } else if [2, 7, 12, 17].contains(&mod18) {
+                frame.set(led, Rgb::new(200, 0, 200));
+            } else if [0, 1, 8, 11].contains(&mod18) {
+                frame.set(led, Rgb::new(200, 200, 0));
+            } else if [9, 10].contains(&mod18) {
+                frame.set(led, Rgb::new(0, 200, 200));
+            } else {
+                frame.set(led, Rgb::new(0, 0, 0));
+            }
+        }
+    }
+
+
+    for ring in 0..5 {
+        for pos in 0..20 {
+            let obs = &obstacles[ring][pos];
+            if obs.frames_remaining > 0 {
+                let obs_idx = logical_to_physical(ring, pos);
+                if obs_idx < 90 {
+                    frame.set(logical_to_physical(ring, pos), obs.color);
+                }
+            }
         }
     }
     }
