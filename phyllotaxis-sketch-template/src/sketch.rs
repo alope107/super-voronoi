@@ -1,9 +1,11 @@
 //! Your sketch lives here. The runtime and raw ABI are in `phyllo.rs`.
 
-use crate::{frame_ptr, phyllo::{self, Frame, Input, LED_COUNT, Rgb}};
+use crate::{frame_ptr, phyllo::{self, random, Frame, Input, LED_COUNT, Rgb}};
 
 /// Use NONE, AUDIO, INPUT, or AUDIO | INPUT.
 pub const CAPABILITIES: u32 = phyllo::capabilities::INPUT;
+
+pub const SPAWN_RATE: f32 = 0.01;
 
 static mut initialized: bool = false;
 static mut idx: usize = 0;
@@ -60,43 +62,41 @@ pub unsafe fn update_obstacles() {
     }
 }
 
+pub unsafe fn spawn_obstacles() {
+    let should_spawn = random();
+    if should_spawn < SPAWN_RATE {
+        for _ in 0..3 {
+            let spawn_idx = (random() * 20.0) as usize;
+            let obs_time = (30.0 + random() * 60.0) as u64;
+            let obs = Obstacle {
+                frames_remaining: obs_time,
+                frames_per_level: obs_time,
+                color: Rgb::new(255, 0, 0),
+            };
+            obstacles[4][spawn_idx] = obs;
+        }
+    }
+}
+
 pub fn render(input: &Input<'_>, frame: &mut Frame<'_>) {
     unsafe{
     if !initialized {
-        obstacles[4][11] = Obstacle {
-            frames_remaining: 60,
-            frames_per_level: 60,
-            color: Rgb::new(255, 255, 255),
-        };
-        obstacles[4][0] = Obstacle {
-            frames_remaining: 60,
-            frames_per_level: 60,
-            color: Rgb::new(0,0,0),
-        };
-        obstacles[4][2] = Obstacle {
-            frames_remaining: 60,
-            frames_per_level: 60,
-            color: Rgb::new(255, 255, 255),
-        };
-        obstacles[4][3] = Obstacle {
-            frames_remaining: 60,
-            frames_per_level: 60,
-            color: Rgb::new(0,0,0),
-        };
         initialized = true;
     }
     let time = input.phase(8_000_000);
 
-    idx = (idx as i32 + input.encoder_delta()) as usize;
-    if idx < 0 {
-        idx = 19;
+    let mut tmp_idx = idx as i32 - input.encoder_delta();
+    if tmp_idx < 0 {
+        tmp_idx = 19;
     }
-    idx %= 20;
+    tmp_idx %= 20;
+    idx = tmp_idx as usize;
     if input.button_released() {
         level += 1;
     }
     level %= 5;
 
+    spawn_obstacles();
     update_obstacles();
 
     let test_obstacle = obstacles[level][idx];
@@ -108,17 +108,17 @@ pub fn render(input: &Input<'_>, frame: &mut Frame<'_>) {
         for led in 0..LED_COUNT {
             let mod18 = led % 18;
             if logical_to_physical(level, idx) == led {
-                frame.set(led, Rgb::new(255, 0, 0));
+                frame.set(led, Rgb::new(255, 255, 255));
             } else if [4, 5, 14, 15].contains(&mod18) {
-                frame.set(led, Rgb::new(0, 255, 0));
+                frame.set(led, Rgb::new(0, 140, 0));
             } else if [3, 6, 13, 16].contains(&mod18) {
-                frame.set(led, Rgb::new(0, 0, 255));
+                frame.set(led, Rgb::new(0, 0, 140));
             } else if [2, 7, 12, 17].contains(&mod18) {
-                frame.set(led, Rgb::new(200, 0, 200));
+                frame.set(led, Rgb::new(120, 0, 120));
             } else if [0, 1, 8, 11].contains(&mod18) {
-                frame.set(led, Rgb::new(200, 200, 0));
+                frame.set(led, Rgb::new(120, 120, 0));
             } else if [9, 10].contains(&mod18) {
-                frame.set(led, Rgb::new(0, 200, 200));
+                frame.set(led, Rgb::new(0, 120, 120));
             } else {
                 frame.set(led, Rgb::new(0, 0, 0));
             }
