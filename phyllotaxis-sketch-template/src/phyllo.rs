@@ -38,6 +38,25 @@ impl Rgb {
             (self.b as f32 * amount) as u8,
         )
     }
+
+    /// Linearly interpolate toward `other`, clamping `amount` to 0..1.
+    pub fn lerp(self, other: Self, amount: f32) -> Self {
+        let amount = clamp01(amount);
+        Self::new(
+            (self.r as f32 + (other.r as f32 - self.r as f32) * amount) as u8,
+            (self.g as f32 + (other.g as f32 - self.g as f32) * amount) as u8,
+            (self.b as f32 + (other.b as f32 - self.b as f32) * amount) as u8,
+        )
+    }
+
+    /// Multiply each channel by the corresponding channel in `other`.
+    pub fn multiply(self, other: Self) -> Self {
+        Self::new(
+            (self.r as u16 * other.r as u16 / 255) as u8,
+            (self.g as u16 * other.g as u16 / 255) as u8,
+            (self.b as u16 * other.b as u16 / 255) as u8,
+        )
+    }
 }
 
 #[derive(Clone, Copy, Default)]

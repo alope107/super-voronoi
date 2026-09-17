@@ -69,12 +69,18 @@ pub unsafe fn spawn_obstacles() {
     if should_spawn < SPAWN_RATE * difficulty {
         for _ in 0..3 {
             let spawn_idx = (random() * 20.0) as usize;
-            let obs_time = ((30.0 + random() * 60.0) / difficulty) as u64;
+            let obs_time = ((40.0 + random() * 20.0) / difficulty) as u64;
+
             let obs = Obstacle {
                 frames_remaining: obs_time,
                 frames_per_level: obs_time,
                 color: Rgb::new(255, 0, 0),
             };
+            if difficulty > 3.0 {
+                if random() < 0.03 * difficulty {
+                    obstacles[4][(spawn_idx + 1) % 20] = obs;
+                }
+            }
             obstacles[4][spawn_idx] = obs;
         }
     }
@@ -92,7 +98,7 @@ pub fn render(input: &Input<'_>, frame: &mut Frame<'_>) {
         initialized = true;
     }
     let time = input.phase(8_000_000);
-    difficulty += 0.001;
+    difficulty += 0.0004;
 
     let mut tmp_idx = idx as i32 - input.encoder_delta();
     if tmp_idx < 0 {
@@ -115,8 +121,9 @@ pub fn render(input: &Input<'_>, frame: &mut Frame<'_>) {
 
     if dying > 0 {
         dying -= 1;
+        let col = Rgb::new(0, 0, 0).lerp(Rgb::new(255, 0, 0), dying as f32 / 60.0);
         for led in 0..LED_COUNT {
-            frame.set(led, Rgb::new(255, 0, 0));
+            frame.set(led, col);
         }
         if dying == 0 {
             initialized = false;
@@ -137,38 +144,20 @@ pub fn render(input: &Input<'_>, frame: &mut Frame<'_>) {
 
         frame.set(logical_to_physical(level, idx), Rgb::new(255, 255, 255));
 
-        // for led in 0..LED_COUNT {
-        //     let mod18 = led % 18;
-        //     if logical_to_physical(level, idx) == led {
-        //         frame.set(led, Rgb::new(255, 255, 255));
-        //     } else if [4, 5, 14, 15].contains(&mod18) {
-        //         frame.set(led, Rgb::new(0, 140, 0));
-        //     } else if [3, 6, 13, 16].contains(&mod18) {
-        //         frame.set(led, Rgb::new(0, 0, 140));
-        //     } else if [2, 7, 12, 17].contains(&mod18) {
-        //         frame.set(led, Rgb::new(120, 0, 120));
-        //     } else if [0, 1, 8, 11].contains(&mod18) {
-        //         frame.set(led, Rgb::new(120, 120, 0));
-        //     } else if [9, 10].contains(&mod18) {
-        //         frame.set(led, Rgb::new(0, 120, 120));
-        //     } else {
-        //         frame.set(led, Rgb::new(0, 0, 0));
-        //     }
-        // }
-    }
-
-
-    for ring in 0..5 {
-        for pos in 0..20 {
-            let obs = &obstacles[ring][pos];
-            if obs.frames_remaining > 0 {
-                let obs_idx = logical_to_physical(ring, pos);
-                if obs_idx < 90 {
-                    frame.set(logical_to_physical(ring, pos), obs.color);
+        for ring in 0..5 {
+            for pos in 0..20 {
+                let obs = &obstacles[ring][pos];
+                if obs.frames_remaining > 0 {
+                    let obs_idx = logical_to_physical(ring, pos);
+                    if obs_idx < 90 {
+                        frame.set(logical_to_physical(ring, pos), obs.color);
+                    }
                 }
             }
         }
     }
+
+
     }
 }
 
