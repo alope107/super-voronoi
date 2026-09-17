@@ -1,0 +1,93 @@
+#!/bin/sh
+set -eu
+
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+config_file=${PHYLLO_ENV_FILE:-$repo_dir/.phyllo.env}
+if [ -r "$config_file" ]; then
+    # This is deliberately ignored by Git and should be readable only by you.
+    . "$config_file"
+fi
+
+usage() {
+    printf '%s\n' \
+        'usage: ./phyllo list|health|build|upload|run|delete|main' \
+        '' \
+        'Configure PHYLLO_HOST, PHYLLO_SLOT,' \
+        'PHYLLO_NAME, and PHYLLO_COLOR in .phyllo.env or your shell.' >&2
+    exit 2
+}
+
+command_name=${1:-}
+[ -n "$command_name" ] || usage
+
+curl_api() {
+    # Local board traffic must not be routed through a configured HTTP proxy.
+    curl --fail-with-body --silent --show-error --noproxy '*' \
+        --connect-timeout 10 --max-time 30 "$@"
+}
+
+if [ "$command_name" = build ]; then
+    cd "$repo_dir"
+    cargo build --release
+    exit
+fi
+
+case ${PHYLLO_HOST:-} in
+    http://*|https://*) base_url=${PHYLLO_HOST%/} ;;
+    '') printf '%s\n' 'PHYLLO_HOST is not configured' >&2; exit 2 ;;
+    *) base_url=http://${PHYLLO_HOST%/} ;;
+esac
+
+slot() {
+    case ${PHYLLO_SLOT:-} in
+        ''|*[!0-9]*) printf '%s\n' 'PHYLLO_SLOT must be 0..99' >&2; exit 2 ;;
+    esac
+    if [ "$PHYLLO_SLOT" -gt 99 ]; then
+        printf '%s\n' 'PHYLLO_SLOT must be 0..99' >&2
+        exit 2
+    fi
+}
+
+case "$command_name" in
+    list)
+        curl_api "$base_url/api/sketches"
+        ;;
+    health)
+        curl_api "$base_url/api/health"
+        ;;
+    upload)
+        slot
+        name=${PHYLLO_NAME:-}
+        color=${PHYLLO_COLOR:-#be28ff}
+        case "$name" in
+            ''|*[!A-Za-z0-9._-]*) printf '%s\n' 'PHYLLO_NAME contains invalid characters' >&2; exit 2 ;;
+        esac
+        cd "$repo_dir"
+        cargo build --release
+        module=target/wasm32-unknown-unknown/release/phyllotaxis_sketch.wasm
+        bytes=$(wc -c < "$module" | tr -d ' ')
+        if [ "$bytes" -gt 32704 ]; then
+            printf 'module is too large: %s bytes (maximum 32704)\n' "$bytes" >&2
+            exit 1
+        fi
+        curl_api -X POST \
+            -H 'Content-Type: application/wasm' \
+            -H "X-Phyllo-Color: $color" \
+            --data-binary "@$module" \
+            "$base_url/api/sketches/$PHYLLO_SLOT/$name"
+        ;;
+    run)
+        slot
+        curl_api -X POST "$base_url/api/run/$PHYLLO_SLOT"
+        ;;
+    delete)
+        slot
+        curl_api -X DELETE "$base_url/api/sketches/$PHYLLO_SLOT"
+        ;;
+    main)
+        curl_api -X POST "$base_url/api/select/0"
+        ;;
+    *) usage ;;
+esac
+
+printf '\n'
